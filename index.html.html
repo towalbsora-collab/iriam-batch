@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>IRIAMバッジ管理</title>
+  <meta name="theme-color" content="#0e0a1a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="バッジ管理" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <style>
+    * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+    body { background:#0e0a1a; color:#e0d0ff; font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif; }
+    #app { max-width:430px; margin:0 auto; min-height:100vh; }
+    input, textarea, select { font-family:inherit; }
+  </style>
+</head>
+<body>
+<div id="app"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useMemo } = React;
+
+
+
+const STAR_COLORS = {
+  1:"#60d4f5",
+  2:"#3a6ef5",
+  3:"#a060d0",
+  4:"#f560b8",
+  5:"#f53030",
+};
+function starColor(n) { return STAR_COLORS[n] || "#a090c0"; }
+
+function getTodayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function getYearMonth(dateStr) {
+  return dateStr ? dateStr.slice(0, 7) : ""; // "YYYY-MM"
+}
+// 指定月の最高バッジ星数を返す（なければ null）
+function getMaxBadgeInMonth(badges, yearMonth) {
+  const filtered = badges.filter(b => getYearMonth(b.date) === yearMonth);
+  if (filtered.length === 0) return null;
+  return Math.max(...filtered.map(b => b.stars));
+}
+
+function fmtDateFull(s) {
+  if (!s) return "—";
+  const [y,m,d] = s.split("-");
+  return `${y}/${parseInt(m)}/${parseInt(d)}`;
+}
+function fmtDate(s) {
+  if (!s) return "—";
+  const [y,m,d] = s.split("-");
+  return `${parseInt(m)}/${parseInt(d)}`;
+}
+function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+
+function loadListeners() {
+  try { const r = localStorage.getItem("iriam_listeners"); return r ? JSON.parse(r) : []; }
+  catch { return []; }
+}
+function saveListeners(d) {
+  try { localStorage.setItem("iriam_listeners", JSON.stringify(d)); } catch {}
+}
+
+// ☆1〜☆5 テキスト表記
+function StarLabel({ count, size="md" }) {
+  const fs = size==="sm" ? "0.78rem" : "0.9rem";
+  return (
+    <span style={{color:STAR_COLOR, fontSize:fs, fontWeight:700}}>
+      {"☆".repeat(count)}{count}
+    </span>
+  );
+}
+
+// ============================================================
+// リスナー追加・編集モーダル（共用）
+// ============================================================
+function ListenerFormModal({ initial, onSave, onClose }) {
+  const isEdit = !!initial;
+  const [name,       setName]       = useState(initial?.name       ?? "");
+  const [followDate, setFollowDate] = useState(initial?.followDate ?? getTodayStr());
+  const [memo,       setMemo]       = useState(initial?.followMemo ?? "");
+
+  const save = () => {
+    if (!name.trim()) return;
+    onSave({ name: name.trim(), followDate, followMemo: memo.trim() });
+    onClose();
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end"}} onClick={onClose}>
+      <div style={{background:"#181030",borderTop:"2px solid #3a2060",borderRadius:"20px 20px 0 0",padding:"20px 20px 40px",maxWidth:430,width:"100%",margin:"0 auto"}} onClick={e=>e.stopPropagation()}>
+        <div style={{width:40,height:4,background:"#3a2060",borderRadius:99,margin:"0 auto 18px"}} />
+        <div style={{fontWeight:900,fontSize:"1rem",color:"#e0d0ff",marginBottom:18}}>
+          {isEdit ? "リスナー情報を編集" : "リスナーを追加"}
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:"0.7rem",color:"#7060a0",fontWeight:700,marginBottom:6}}>リスナー名 *</div>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder="名前を入力"
+            style={{width:"100%",background:"#1a1530",border:"1.5px solid #3a3060",borderRadius:8,padding:"10px 12px",color:"#e0d0ff",fontSize:"0.9rem",outline:"none",fontFamily:"inherit"}} />
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:"0.7rem",color:"#7060a0",fontWeight:700,marginBottom:6}}>フォロー日</div>
+          <input type="date" value={followDate} onChange={e=>setFollowDate(e.target.value)}
+            style={{width:"100%",background:"#1a1530",border:"1.5px solid #3a3060",borderRadius:8,padding:"10px 12px",color:"#e0d0ff",fontSize:"0.9rem",outline:"none",fontFamily:"inherit"}} />
+        </div>
+
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:"0.7rem",color:"#7060a0",fontWeight:700,marginBottom:6}}>メモ</div>
+          <textarea value={memo} onChange={e=>setMemo(e.target.value)} placeholder="配信名など" rows={2}
+            style={{width:"100%",background:"#1a1530",border:"1.5px solid #3a3060",borderRadius:8,padding:"10px 12px",color:"#e0d0ff",fontSize:"0.85rem",outline:"none",resize:"none",fontFamily:"inherit"}} />
+        </div>
+
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={onClose} style={{flex:1,padding:"12px",borderRadius:10,cursor:"pointer",background:"#1a1530",border:"1.5px solid #3a3060",color:"#7060a0",fontWeight:700,fontSize:"0.9rem"}}>キャンセル</button>
+          <button onClick={save} style={{flex:2,padding:"12px",borderRadius:10,cursor:"pointer",background:"linear-gradient(135deg,#f5607c,#7c72f5)",border:"none",color:"#fff",fontWeight:700,fontSize:"0.9rem"}}>
+            {isEdit ? "保存" : "追加"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// バッジ記録モーダル
+// ============================================================
+function AddBadgeModal({ listener, onSave, onClose }) {
+  const [stars, setStars] = useState(1);
+  const [date,  setDate]  = useState(getTodayStr());
+  const [memo,  setMemo]  = useState("");
+
+  const save = () => {
+    onSave({ id:newId(), stars, date, memo:memo.trim() });
+    onClose();
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:300,display:"flex",flexDirection:"column",justifyContent:"flex-end"}} onClick={onClose}>
+      <div style={{background:"#181030",borderTop:"2px solid #3a2060",borderRadius:"20px 20px 0 0",padding:"20px 20px 40px",maxWidth:430,width:"100%",margin:"0 auto"}} onClick={e=>e.stopPropagation()}>
+        <div style={{width:40,height:4,background:"#3a2060",borderRadius:99,margin:"0 auto 18px"}} />
+        <div style={{fontWeight:900,fontSize:"1rem",color:"#e0d0ff",marginBottom:4}}>バッジ獲得を記録</div>
+        <div style={{fontSize:"0.75rem",color:"#7060a0",marginBottom:18}}>{listener.name}</div>
+
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:"0.7rem",color:"#7060a0",fontWeight:700,marginBottom:10}}>星の数</div>
+          <div style={{display:"flex",gap:6}}>
+            {[1,2,3,4,5].map(s => (
+              <button key={s} onClick={()=>setStars(s)} style={{flex:1,padding:"12px 0",borderRadius:10,cursor:"pointer",fontWeight:900,fontSize:"1rem",background:stars===s?`${starColor(s)}33`:"#13102a",color:stars===s?starColor(s):"#4a3870",border:`2px solid ${stars===s?starColor(s):"#2a2040"}`,transition:"all 0.15s"}}>
+                ☆{s}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:"0.7rem",color:"#7060a0",fontWeight:700,marginBottom:6}}>獲得日</div>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+            style={{width:"100%",background:"#1a1530",border:"1.5px solid #3a3060",borderRadius:8,padding:"10px 12px",color:"#e0d0ff",fontSize:"0.9rem",outline:"none",fontFamily:"inherit"}} />
+        </div>
+
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:"0.7rem",color:"#7060a0",fontWeight:700,marginBottom:6}}>メモ</div>
+          <textarea value={memo} onChange={e=>setMemo(e.target.value)} placeholder="配信名・コメントなど" rows={2}
+            style={{width:"100%",background:"#1a1530",border:"1.5px solid #3a3060",borderRadius:8,padding:"10px 12px",color:"#e0d0ff",fontSize:"0.85rem",outline:"none",resize:"none",fontFamily:"inherit"}} />
+        </div>
+
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={onClose} style={{flex:1,padding:"12px",borderRadius:10,cursor:"pointer",background:"#1a1530",border:"1.5px solid #3a3060",color:"#7060a0",fontWeight:700,fontSize:"0.9rem"}}>キャンセル</button>
+          <button onClick={save} style={{flex:2,padding:"12px",borderRadius:10,cursor:"pointer",background:"linear-gradient(135deg,#f5a623,#f5607c)",border:"none",color:"#fff",fontWeight:700,fontSize:"0.9rem"}}>記録する</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ============================================================
+// バッジ編集モーダル
+// ============================================================
+function EditBadgeModal({ badge, listener, onSave, onClose }) {
+  const [stars, setStars] = useState(badge.stars);
+  const [date,  setDate]  = useState(badge.date);
+  const [memo,  setMemo]  = useState(badge.memo ?? "");
+
+  const save = () => {
+    onSave({ ...badge, stars, date, memo: memo.trim() });
+    onClose();
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:300,display:"flex",flexDirection:"column",justifyContent:"flex-end"}} onClick={onClose}>
+      <div style={{background:"#181030",borderTop:"2px solid #3a2060",borderRadius:"20px 20px 0 0",padding:"20px 20px 40px",maxWidth:430,width:"100%",margin:"0 auto"}} onClick={e=>e.stopPropagation()}>
+        <div style={{width:40,height:4,background:"#3a2060",borderRadius:99,margin:"0 auto 18px"}} />
+        <div style={{fontWeight:900,fontSize:"1rem",color:"#e0d0ff",marginBottom:4}}>バッジを編集</div>
+        <div style={{fontSize:"0.75rem",color:"#7060a0",marginBottom:18}}>{listener.name}</div>
+
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:"0.7rem",color:"#7060a0",fontWeight:700,marginBottom:10}}>星の数</div>
+          <div style={{display:"flex",gap:6}}>
+            {[1,2,3,4,5].map(s => (
+              <button key={s} onClick={()=>setStars(s)} style={{flex:1,padding:"12px 0",borderRadius:10,cursor:"pointer",fontWeight:900,fontSize:"1rem",background:stars===s?`${starColor(s)}33`:"#13102a",color:stars===s?starColor(s):"#4a3870",border:`2px solid ${stars===s?starColor(s):"#2a2040"}`,transition:"all 0.15s"}}>
+                ☆{s}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:"0.7rem",color:"#7060a0",fontWeight:700,marginBottom:6}}>獲得日</div>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+            style={{width:"100%",background:"#1a1530",border:"1.5px solid #3a3060",borderRadius:8,padding:"10px 12px",color:"#e0d0ff",fontSize:"0.9rem",outline:"none",fontFamily:"inherit"}} />
+        </div>
+
+        <div style={{marginBottom:20}}>
+          <div style={{fontSize:"0.7rem",color:"#7060a0",fontWeight:700,marginBottom:6}}>メモ</div>
+          <textarea value={memo} onChange={e=>setMemo(e.target.value)} placeholder="配信名・コメントなど" rows={2}
+            style={{width:"100%",background:"#1a1530",border:"1.5px solid #3a3060",borderRadius:8,padding:"10px 12px",color:"#e0d0ff",fontSize:"0.85rem",outline:"none",resize:"none",fontFamily:"inherit"}} />
+        </div>
+
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={onClose} style={{flex:1,padding:"12px",borderRadius:10,cursor:"pointer",background:"#1a1530",border:"1.5px solid #3a3060",color:"#7060a0",fontWeight:700,fontSize:"0.9rem"}}>キャンセル</button>
+          <button onClick={save} style={{flex:2,padding:"12px",borderRadius:10,cursor:"pointer",background:"linear-gradient(135deg,#a060d0,#f5607c)",border:"none",color:"#fff",fontWeight:700,fontSize:"0.9rem"}}>保存</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// 月別バッジ履歴（最高バッジ表示＋タップで展開）
+// ============================================================
+function MonthlyBadgeHistory({ listener, sorted, onAddBadge, onEditBadge, onDeleteBadge }) {
+  const [expandedMonths, setExpandedMonths] = useState({});
+
+  const toggleMonth = (ym) => {
+    setExpandedMonths(prev => ({ ...prev, [ym]: !prev[ym] }));
+  };
+
+  // 月ごとにグループ化
+  const groups = {};
+  sorted.forEach(b => {
+    const ym = getYearMonth(b.date);
+    if (!groups[ym]) groups[ym] = [];
+    groups[ym].push(b);
+  });
+  const months = Object.keys(groups).sort().reverse();
+
+  return (
+    <div style={{marginBottom:16}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div style={{fontSize:"0.72rem",color:"#a090c0",fontWeight:700}}>バッジ履歴（{listener.badges.length}件）</div>
+        <button onClick={onAddBadge} style={{padding:"5px 12px",borderRadius:8,cursor:"pointer",background:"#a090c022",color:"#a090c0",border:"1.5px solid #a090c055",fontSize:"0.75rem",fontWeight:700}}>
+          ＋ 記録
+        </button>
+      </div>
+
+      {months.length === 0 ? (
+        <div style={{color:"#4a3870",textAlign:"center",padding:"20px 0",fontSize:"0.85rem"}}>バッジ履歴がありません</div>
+      ) : months.map(ym => {
+        const [y, m] = ym.split("-");
+        const monthBadges = groups[ym];
+        const maxStars = Math.max(...monthBadges.map(b => b.stars));
+        const isOpen = !!expandedMonths[ym];
+
+        return (
+          <div key={ym} style={{marginBottom:8}}>
+            {/* 月ヘッダー：最高バッジを表示、タップで展開 */}
+            <button onClick={()=>toggleMonth(ym)} style={{
+              width:"100%", background:"#1e1640", border:`1.5px solid ${starColor(maxStars)}44`,
+              borderRadius: isOpen ? "10px 10px 0 0" : 10,
+              padding:"11px 14px", cursor:"pointer", textAlign:"left",
+            }}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{color:starColor(maxStars),fontWeight:900,fontSize:"1.1rem"}}>☆{maxStars}</span>
+                  <span style={{fontSize:"0.78rem",color:"#a090c0",fontWeight:700}}>{y}年{parseInt(m)}月</span>
+                  <span style={{fontSize:"0.68rem",color:"#5a4880"}}>{monthBadges.length}件</span>
+                </div>
+                <span style={{color:"#5a4880",fontSize:"0.8rem"}}>{isOpen ? "▲" : "▼"}</span>
+              </div>
+            </button>
+
+            {/* 展開時：各バッジ詳細 */}
+            {isOpen && (
+              <div style={{background:"#16122e",border:`1.5px solid ${starColor(maxStars)}33`,borderTop:"none",borderRadius:"0 0 10px 10px",padding:"8px 10px"}}>
+                {monthBadges.sort((a,b)=>b.date.localeCompare(a.date)).map(b => (
+                  <div key={b.id} style={{background:"#1e1640",borderRadius:8,padding:"8px 12px",marginBottom:6}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:b.memo?5:0}}>
+                      <span style={{color:starColor(b.stars),fontWeight:700,fontSize:"0.9rem"}}>☆{b.stars}</span>
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        <span style={{fontSize:"0.72rem",color:"#7060a0"}}>{fmtDate(b.date)}</span>
+                        <button onClick={()=>onEditBadge(b)} style={{background:"#2a2040",border:"1px solid #3a3060",borderRadius:6,color:"#a090c0",fontSize:"0.62rem",padding:"2px 7px",cursor:"pointer"}}>編集</button>
+                        <button onClick={()=>onDeleteBadge(listener.id, b.id)} style={{background:"#2a1030",border:"1px solid #5a2040",borderRadius:6,color:"#f56070",fontSize:"0.62rem",padding:"2px 7px",cursor:"pointer"}}>削除</button>
+                      </div>
+                    </div>
+                    {b.memo && <div style={{fontSize:"0.75rem",color:"#7060a0",background:"#13102a",borderRadius:6,padding:"4px 8px"}}>{b.memo}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
+// リスナー詳細
+// ============================================================
+function ListenerDetail({ listener, onAddBadge, onEditBadge, onDeleteBadge, onEdit, onDelete, onClose }) {
+  const [showAddBadge,  setShowAddBadge]  = useState(false);
+  const [showEdit,      setShowEdit]      = useState(false);
+  const [editingBadge,  setEditingBadge]  = useState(null);
+
+  const sorted = [...listener.badges].sort((a,b) => b.date.localeCompare(a.date));
+
+  // 先月・今月の集計
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth()-1, 1);
+  const lastMonth = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth()+1).padStart(2,'0')}`;
+
+  const thisMonthBadges = listener.badges.filter(b => getYearMonth(b.date) === thisMonth);
+  const lastMonthBadges = listener.badges.filter(b => getYearMonth(b.date) === lastMonth);
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:200,background:"#0e0a1a",overflow:"auto",maxWidth:430,margin:"0 auto"}}>
+      {/* Header */}
+      <div style={{background:"linear-gradient(135deg,#2a1a3e,#1a0e2e)",borderBottom:"1.5px solid #3a2060",padding:"18px 20px 14px",position:"sticky",top:0,zIndex:10}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <button onClick={onClose} style={{background:"none",border:"none",color:"#a090c0",fontSize:"1.5rem",cursor:"pointer",padding:"0 4px",lineHeight:1}}>‹</button>
+            <div>
+              <div style={{fontSize:"0.62rem",color:"#a060d0",fontWeight:700,letterSpacing:"0.2em"}}>リスナー詳細</div>
+              <div style={{fontSize:"1.1rem",fontWeight:900,color:"#e0d0ff"}}>{listener.name}</div>
+            </div>
+          </div>
+          <button onClick={()=>setShowEdit(true)} style={{padding:"6px 14px",borderRadius:8,cursor:"pointer",background:"#2a1a3e",color:"#a090c0",border:"1.5px solid #3a2060",fontSize:"0.78rem",fontWeight:700}}>
+            編集
+          </button>
+        </div>
+      </div>
+
+      <div style={{padding:"16px 14px 60px"}}>
+
+        {/* フォロー情報 */}
+        <div style={{background:"#1e1640",border:"1px solid #3a3060",borderRadius:14,padding:"14px 16px",marginBottom:16}}>
+          <div style={{fontSize:"0.72rem",color:"#a060d0",fontWeight:700,marginBottom:10}}>📅 フォロー情報</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontSize:"0.8rem",color:"#a090c0"}}>フォロー日</span>
+            <span style={{fontSize:"0.9rem",fontWeight:700,color:"#e0d0ff"}}>{fmtDateFull(listener.followDate)}</span>
+          </div>
+          {listener.followDate && (()=>{
+            const diff = Math.floor((new Date() - new Date(listener.followDate)) / (1000*60*60*24));
+            return (
+              <div style={{background:"#13102a",borderRadius:8,padding:"7px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:listener.followMemo?8:0}}>
+                <span style={{fontSize:"0.75rem",color:"#6050a0"}}>フォローから</span>
+                <span style={{fontSize:"0.95rem",fontWeight:900,color:"#a060d0"}}>{diff}日</span>
+              </div>
+            );
+          })()}
+          {listener.followMemo && (
+            <div style={{fontSize:"0.78rem",color:"#7060a0",background:"#13102a",borderRadius:8,padding:"6px 10px"}}>
+              {listener.followMemo}
+            </div>
+          )}
+        </div>
+
+        {/* バッジ統計 */}
+        <div style={{display:"flex",gap:8,marginBottom:16}}>
+          {[
+            { label:"先月のバッジ数", value:lastMonthBadges.length },
+            { label:"今月のバッジ数", value:thisMonthBadges.length },
+          ].map(s=>(
+            <div key={s.label} style={{flex:1,background:"#1e1640",border:"1px solid #3a3060",borderRadius:12,padding:"10px 6px",textAlign:"center"}}>
+              <div style={{fontSize:"1.4rem",fontWeight:900,color:"#a090c0"}}>{s.value}</div>
+              <div style={{fontSize:"0.62rem",color:"#6050a0",marginTop:2}}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* バッジ履歴（月別・最高バッジ表示＋展開） */}
+        <MonthlyBadgeHistory
+          listener={listener}
+          sorted={sorted}
+          onAddBadge={()=>setShowAddBadge(true)}
+          onEditBadge={b=>setEditingBadge(b)}
+          onDeleteBadge={onDeleteBadge}
+        />
+
+        {/* 削除 */}
+        <button onClick={()=>{ onDelete(listener.id); onClose(); }}
+          style={{width:"100%",padding:"12px",borderRadius:12,cursor:"pointer",background:"#1a1530",border:"1.5px solid #3a3060",color:"#5a4880",fontSize:"0.85rem",fontWeight:700}}>
+          このリスナーを削除
+        </button>
+      </div>
+
+      {showAddBadge && (
+        <AddBadgeModal listener={listener} onSave={badge=>onAddBadge(listener.id, badge)} onClose={()=>setShowAddBadge(false)} />
+      )}
+      {editingBadge && (
+        <EditBadgeModal badge={editingBadge} listener={listener} onSave={updated=>{ onEditBadge(listener.id, updated); setEditingBadge(null); }} onClose={()=>setEditingBadge(null)} />
+      )}
+      {showEdit && (
+        <ListenerFormModal
+          initial={listener}
+          onSave={fields => onEdit(listener.id, fields)}
+          onClose={()=>setShowEdit(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// リスナーカード
+// ============================================================
+function ListenerCard({ listener, onTap }) {
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth()-1, 1);
+  const lastMonth = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth()+1).padStart(2,'0')}`;
+  const thisMax = getMaxBadgeInMonth(listener.badges, thisMonth);
+  const lastMax = getMaxBadgeInMonth(listener.badges, lastMonth);
+
+  return (
+    <button onClick={onTap} style={{width:"100%",background:"#1e1640",border:"1px solid #3a3060",borderRadius:14,padding:"12px 14px",marginBottom:8,cursor:"pointer",textAlign:"left",transition:"all 0.1s"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:"0.95rem",fontWeight:700,color:"#e0d0ff",marginBottom:6,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{listener.name}</div>
+          <div style={{fontSize:"0.72rem",color:"#6050a0"}}>フォロー：{fmtDateFull(listener.followDate)}</div>
+        </div>
+        <div style={{textAlign:"right",marginLeft:12,flexShrink:0,display:"flex",flexDirection:"column",gap:3}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6}}>
+            <span style={{fontSize:"0.6rem",color:"#5a4880"}}>先月</span>
+            {lastMax != null
+              ? <span style={{color:starColor(lastMax),fontWeight:700,fontSize:"0.85rem"}}>☆{lastMax}</span>
+              : <span style={{fontSize:"0.75rem",color:"#4a3870"}}>なし</span>
+            }
+          </div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6}}>
+            <span style={{fontSize:"0.6rem",color:"#5a4880"}}>今月</span>
+            {thisMax != null
+              ? <span style={{color:starColor(thisMax),fontWeight:700,fontSize:"0.85rem"}}>☆{thisMax}</span>
+              : <span style={{fontSize:"0.75rem",color:"#4a3870"}}>なし</span>
+            }
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// ============================================================
+// メインアプリ
+// ============================================================
+function App() {
+  const [listeners, setListenersRaw] = useState(() => loadListeners());
+  const [showAdd,        setShowAdd]        = useState(false);
+  const [detail,         setDetail]         = useState(null);
+  const [search,         setSearch]         = useState("");
+
+  const setListeners = (d) => { setListenersRaw(d); saveListeners(d); };
+
+  const addListener = (fields) => setListeners([...listeners, { id:newId(), badges:[], ...fields }]);
+
+  const editListener = (id, fields) => {
+    const updated = listeners.map(l => l.id===id ? {...l, ...fields} : l);
+    setListeners(updated);
+    setDetail(prev => prev?.id===id ? {...prev, ...fields} : prev);
+  };
+
+  const deleteListener = (id) => setListeners(listeners.filter(l => l.id !== id));
+
+  const addBadge = (listenerId, badge) => {
+    const updated = listeners.map(l => l.id===listenerId ? {...l, badges:[...l.badges, badge]} : l);
+    setListeners(updated);
+    setDetail(prev => prev?.id===listenerId ? {...prev, badges:[...prev.badges, badge]} : prev);
+  };
+  const editBadge = (listenerId, updatedBadge) => {
+    const updated = listeners.map(l => l.id===listenerId
+      ? {...l, badges: l.badges.map(b => b.id===updatedBadge.id ? updatedBadge : b)}
+      : l);
+    setListeners(updated);
+    setDetail(prev => prev?.id===listenerId
+      ? {...prev, badges: prev.badges.map(b => b.id===updatedBadge.id ? updatedBadge : b)}
+      : prev);
+  };
+  const deleteBadge = (listenerId, badgeId) => {
+    const updated = listeners.map(l => l.id===listenerId
+      ? {...l, badges: l.badges.filter(b => b.id !== badgeId)}
+      : l);
+    setListeners(updated);
+    setDetail(prev => prev?.id===listenerId
+      ? {...prev, badges: prev.badges.filter(b => b.id !== badgeId)}
+      : prev);
+  };
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? listeners.filter(l=>l.name.toLowerCase().includes(q)) : listeners;
+  }, [listeners, search]);
+
+  // 統計（先月・今月・総数）
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth()-1, 1);
+  const lastMonth = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth()+1).padStart(2,'0')}`;
+  const allBadges = listeners.flatMap(l => l.badges);
+  const thisMonthCount = allBadges.filter(b => getYearMonth(b.date) === thisMonth).length;
+  const lastMonthCount = allBadges.filter(b => getYearMonth(b.date) === lastMonth).length;
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0e0a1a",color:"#e0d0ff",fontFamily:"'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif",maxWidth:430,margin:"0 auto"}}>
+      {/* Header */}
+      <div style={{background:"linear-gradient(135deg,#2a1a3e,#1a0e2e)",borderBottom:"1.5px solid #3a2060",padding:"18px 20px 14px",position:"sticky",top:0,zIndex:100}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div>
+            <div style={{fontSize:"0.62rem",color:"#a060d0",fontWeight:700,letterSpacing:"0.2em",marginBottom:2}}>IRIAM</div>
+            <div style={{fontSize:"1.1rem",fontWeight:900,color:"#e0d0ff"}}>バッジ管理</div>
+          </div>
+          <button onClick={()=>setShowAdd(true)} style={{padding:"8px 16px",borderRadius:10,cursor:"pointer",background:"linear-gradient(135deg,#f5607c,#7c72f5)",border:"none",color:"#fff",fontWeight:700,fontSize:"0.85rem"}}>＋ 追加</button>
+        </div>
+      </div>
+
+      <div style={{padding:"16px 14px 40px"}}>
+        {/* 統計 */}
+        <div style={{display:"flex",gap:8,marginBottom:16}}>
+          {[
+            { label:"先月のバッジ数", value:lastMonthCount },
+            { label:"今月のバッジ数", value:thisMonthCount },
+          ].map(s=>(
+            <div key={s.label} style={{flex:1,background:"#1e1640",border:"1px solid #3a3060",borderRadius:12,padding:"10px 6px",textAlign:"center"}}>
+              <div style={{fontSize:"1.4rem",fontWeight:900,color:"#a090c0"}}>{s.value}</div>
+              <div style={{fontSize:"0.62rem",color:"#6050a0",marginTop:2}}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* 検索 */}
+        <div style={{marginBottom:14}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍 リスナー名で検索"
+            style={{width:"100%",background:"#1a1530",border:"1.5px solid #3a3060",borderRadius:10,padding:"10px 14px",color:"#e0d0ff",fontSize:"0.85rem",outline:"none",fontFamily:"inherit"}} />
+        </div>
+
+        {/* リスト */}
+        {filtered.length === 0 ? (
+          <div style={{color:"#4a3870",textAlign:"center",padding:"40px 0",fontSize:"0.9rem"}}>
+            {listeners.length===0 ? "リスナーを追加してみましょう" : "該当するリスナーがいません"}
+          </div>
+        ) : filtered.map(l=>(
+          <ListenerCard key={l.id} listener={l} onTap={()=>setDetail(l)} />
+        ))}
+      </div>
+
+      {showAdd && <ListenerFormModal onSave={addListener} onClose={()=>setShowAdd(false)} />}
+      {detail && (
+        <ListenerDetail
+          listener={detail}
+          onAddBadge={addBadge}
+          onEditBadge={editBadge}
+          onDeleteBadge={deleteBadge}
+          onEdit={editListener}
+          onDelete={deleteListener}
+          onClose={()=>setDetail(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+
+ReactDOM.createRoot(document.getElementById("app")).render(<App />);
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
+}
+</script>
+</body>
+</html>
