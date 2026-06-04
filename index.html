@@ -242,9 +242,29 @@ function MonthlyBadgeHistory({ listener, onEditBadge, onDeleteBadge }) {
   );
 }
 
+// 削除確認ダイアログ
+function ConfirmDeleteModal({ name, onConfirm, onClose }) {
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.6)"}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:S.card2,border:"2px solid #5a2040",borderRadius:16,padding:"24px 20px",maxWidth:320,width:"90%",margin:"0 auto",textAlign:"center"}}>
+        <div style={{fontSize:"1.5rem",marginBottom:10}}>🗑️</div>
+        <div style={{fontWeight:900,fontSize:"1rem",color:S.text,marginBottom:8}}>リスナーを削除</div>
+        <div style={{fontSize:"0.85rem",color:S.dim,marginBottom:20}}>
+          <span style={{color:S.text,fontWeight:700}}>「{name}」</span>とバッジ履歴をすべて削除します。この操作は元に戻せません。
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <Btn onClick={onClose} style={{flex:1,padding:"12px",borderRadius:10,background:"#1a1530",border:`1.5px solid ${S.border}`,color:S.sub,fontWeight:700,fontSize:"0.9rem"}}>キャンセル</Btn>
+          <Btn onClick={onConfirm} style={{flex:1,padding:"12px",borderRadius:10,background:"linear-gradient(135deg,#c0304a,#8a1030)",border:"none",color:"#fff",fontWeight:700,fontSize:"0.9rem"}}>削除する</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // リスナー詳細画面
 function ListenerDetail({ listener, onEditBadge, onDeleteBadge, onDelete, onClose }) {
   const [editingBadge, setEditingBadge] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   return (
     <div style={{position:"fixed",inset:0,zIndex:150,background:S.bg,overflowY:"auto",maxWidth:430,margin:"0 auto"}}>
       <div style={{background:"linear-gradient(135deg,#2a1a3e,#1a0e2e)",borderBottom:`1.5px solid ${S.border2}`,padding:"18px 20px 14px",position:"sticky",top:0,zIndex:10}}>
@@ -277,7 +297,7 @@ function ListenerDetail({ listener, onEditBadge, onDeleteBadge, onDelete, onClos
           )}
         </div>
         <MonthlyBadgeHistory listener={listener} onEditBadge={b=>setEditingBadge(b)} onDeleteBadge={onDeleteBadge} />
-        <Btn onClick={()=>{ onDelete(listener.id); onClose(); }}
+        <Btn onClick={()=>setShowDeleteConfirm(true)}
           style={{width:"100%",padding:"12px",borderRadius:12,background:"#1a1530",border:`1.5px solid ${S.border}`,color:S.faint,fontSize:"0.85rem",fontWeight:700}}>
           このリスナーを削除
         </Btn>
@@ -286,6 +306,11 @@ function ListenerDetail({ listener, onEditBadge, onDeleteBadge, onDelete, onClos
         <EditBadgeModal badge={editingBadge} listener={listener}
           onSave={upd=>{ onEditBadge(listener.id, upd); setEditingBadge(null); }}
           onClose={()=>setEditingBadge(null)} />
+      )}
+      {showDeleteConfirm && (
+        <ConfirmDeleteModal name={listener.name}
+          onConfirm={()=>{ onDelete(listener.id); onClose(); }}
+          onClose={()=>setShowDeleteConfirm(false)} />
       )}
     </div>
   );
@@ -299,8 +324,9 @@ function ListenerCard({ listener, onTap, onAddBadge, onEditListener }) {
   const lastMonth = `${lmd.getFullYear()}-${String(lmd.getMonth()+1).padStart(2,'0')}`;
   const thisMax = getMaxBadgeInMonth(listener.badges, thisMonth);
   const lastMax = getMaxBadgeInMonth(listener.badges, lastMonth);
+  const hasBadgeThisMonth = thisMax != null;
   return (
-    <div style={{background:S.card,border:`1px solid ${S.border}`,borderRadius:14,marginBottom:8,overflow:"hidden"}}>
+    <div style={{background:S.card,border:`1.5px solid ${hasBadgeThisMonth ? starColor(thisMax)+"88" : S.border}`,borderRadius:14,marginBottom:8,overflow:"hidden",boxShadow:hasBadgeThisMonth?`0 0 12px ${starColor(thisMax)}33`:"none"}}>
       <div style={{padding:"12px 14px 10px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div style={{fontSize:"0.95rem",fontWeight:700,color:S.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1,marginRight:10}}>
           {listener.name}
@@ -322,7 +348,7 @@ function ListenerCard({ listener, onTap, onAddBadge, onEditListener }) {
           </div>
         </div>
       </div>
-      <div style={{fontSize:"0.68rem",color:"#6050a0",padding:"0 14px 8px"}}>フォロー：{fmtDateFull(listener.followDate)}</div>
+
       <div style={{display:"flex",gap:8,padding:"0 12px 12px"}}>
         <Btn onClick={onAddBadge} style={{flex:2,padding:"9px 0",borderRadius:9,background:"linear-gradient(135deg,#f5a62322,#f5607c22)",color:"#f5a060",border:"1.5px solid #f5a06044",fontWeight:700,fontSize:"0.8rem"}}>＋ 記録</Btn>
         <Btn onClick={onEditListener} style={{flex:1,padding:"9px 0",borderRadius:9,background:"#2a204022",color:S.sub,border:`1.5px solid #3a306055`,fontWeight:700,fontSize:"0.8rem"}}>編集</Btn>
