@@ -358,6 +358,102 @@ function ListenerCard({ listener, onTap, onAddBadge, onEditListener }) {
   );
 }
 
+// バックアップ・復元メニュー
+function BackupMenuModal({ listeners, onRestore, onClose }) {
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [pendingData, setPendingData] = useState(null);
+  const [message, setMessage] = useState(null);
+
+  const handleBackup = () => {
+    const d = new Date();
+    const dateStr = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    const json = JSON.stringify(listeners, null, 2);
+    const blob = new Blob([json], { type:"application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `iriam_backup_${dateStr}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setMessage("✅ バックアップを保存しました");
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!Array.isArray(data)) throw new Error();
+        setPendingData(data);
+        setShowRestoreConfirm(true);
+      } catch {
+        setMessage("❌ ファイルが正しくありません");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const handleRestoreConfirm = () => {
+    onRestore(pendingData);
+    setShowRestoreConfirm(false);
+    setPendingData(null);
+    setMessage(`✅ ${pendingData.length}件のリスナーを復元しました`);
+  };
+
+  return (
+    <BottomSheet onClose={onClose}>
+      <div style={{fontWeight:900,fontSize:"1rem",color:S.text,marginBottom:18}}>バックアップ・復元</div>
+
+      {message && (
+        <div style={{background:"#1a2a1a",border:"1.5px solid #3a6040",borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:"0.85rem",color:"#80e0a0"}}>
+          {message}
+        </div>
+      )}
+
+      {/* バックアップ */}
+      <div style={{background:S.card,border:`1px solid ${S.border}`,borderRadius:12,padding:"14px",marginBottom:12}}>
+        <div style={{fontSize:"0.78rem",fontWeight:700,color:S.sub,marginBottom:4}}>💾 バックアップ</div>
+        <div style={{fontSize:"0.72rem",color:S.dim,marginBottom:12}}>全リスナーとバッジ履歴をJSONファイルとして保存します。</div>
+        <Btn onClick={handleBackup} style={{width:"100%",padding:"10px",borderRadius:9,background:"linear-gradient(135deg,#2a4080,#3a60c0)",border:"none",color:"#fff",fontWeight:700,fontSize:"0.85rem"}}>
+          ダウンロードして保存
+        </Btn>
+      </div>
+
+      {/* 復元 */}
+      <div style={{background:S.card,border:`1px solid ${S.border}`,borderRadius:12,padding:"14px",marginBottom:20}}>
+        <div style={{fontSize:"0.78rem",fontWeight:700,color:S.sub,marginBottom:4}}>📂 復元</div>
+        <div style={{fontSize:"0.72rem",color:S.dim,marginBottom:12}}>バックアップファイルを選択して復元します。現在のデータは上書きされます。</div>
+        <label style={{display:"block",width:"100%",padding:"10px",borderRadius:9,background:"linear-gradient(135deg,#402a20,#804030)",border:"none",color:"#ffb080",fontWeight:700,fontSize:"0.85rem",textAlign:"center",cursor:"pointer"}}>
+          ファイルを選択して復元
+          <input type="file" accept=".json" onChange={handleFileSelect} style={{display:"none"}} />
+        </label>
+      </div>
+
+      <Btn onClick={onClose} style={{width:"100%",padding:"12px",borderRadius:10,background:"#1a1530",border:`1.5px solid ${S.border}`,color:S.dim,fontWeight:700,fontSize:"0.9rem"}}>閉じる</Btn>
+
+      {showRestoreConfirm && (
+        <div onClick={()=>setShowRestoreConfirm(false)} style={{position:"fixed",inset:0,zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",background:"rgba(0,0,0,0.7)"}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:S.card2,border:"2px solid #5a4020",borderRadius:16,padding:"24px 20px",maxWidth:320,width:"90%",textAlign:"center"}}>
+            <div style={{fontSize:"1.5rem",marginBottom:10}}>⚠️</div>
+            <div style={{fontWeight:900,fontSize:"1rem",color:S.text,marginBottom:8}}>復元の確認</div>
+            <div style={{fontSize:"0.82rem",color:S.dim,marginBottom:20}}>
+              {pendingData?.length}件のリスナーデータを復元します。<br />
+              <span style={{color:"#f5a060",fontWeight:700}}>現在のデータはすべて上書きされます。</span>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <Btn onClick={()=>setShowRestoreConfirm(false)} style={{flex:1,padding:"12px",borderRadius:10,background:"#1a1530",border:`1.5px solid ${S.border}`,color:S.sub,fontWeight:700,fontSize:"0.9rem"}}>キャンセル</Btn>
+              <Btn onClick={handleRestoreConfirm} style={{flex:1,padding:"12px",borderRadius:10,background:"linear-gradient(135deg,#a06020,#c08030)",border:"none",color:"#fff",fontWeight:700,fontSize:"0.9rem"}}>復元する</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </BottomSheet>
+  );
+}
+
 // メインアプリ
 function App() {
   const [listeners, setListenersRaw] = useState(() => loadListeners());
@@ -366,6 +462,7 @@ function App() {
   const [search, setSearch] = useState("");
   const [addBadgeFor, setAddBadgeFor] = useState(null);
   const [editListenerFor, setEditListenerFor] = useState(null);
+  const [showBackupMenu, setShowBackupMenu] = useState(false);
 
   const setListeners = (d) => { setListenersRaw(d); saveListeners(d); };
 
@@ -375,6 +472,7 @@ function App() {
   const addBadge = (lid, badge) => setListeners(listeners.map(l => l.id===lid ? {...l, badges:[...l.badges, badge]} : l));
   const editBadge = (lid, upd) => setListeners(listeners.map(l => l.id===lid ? {...l, badges:l.badges.map(b => b.id===upd.id ? upd : b)} : l));
   const deleteBadge = (lid, bid) => setListeners(listeners.map(l => l.id===lid ? {...l, badges:l.badges.filter(b => b.id!==bid)} : l));
+  const restoreListeners = (data) => setListeners(data);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -391,7 +489,10 @@ function App() {
             <div style={{fontSize:"0.62rem",color:S.accent,fontWeight:700,letterSpacing:"0.2em",marginBottom:2}}>IRIAM</div>
             <div style={{fontSize:"1.1rem",fontWeight:900,color:S.text}}>バッジ管理</div>
           </div>
-          <Btn onClick={()=>setShowAdd(true)} style={{padding:"8px 16px",borderRadius:10,background:"linear-gradient(135deg,#f5607c,#7c72f5)",border:"none",color:"#fff",fontWeight:700,fontSize:"0.85rem"}}>＋ 追加</Btn>
+          <div style={{display:"flex",gap:8}}>
+            <Btn onClick={()=>setShowBackupMenu(true)} style={{padding:"8px 12px",borderRadius:10,background:"#2a1a3e",border:`1.5px solid ${S.border2}`,color:S.sub,fontWeight:700,fontSize:"0.85rem"}}>…</Btn>
+            <Btn onClick={()=>setShowAdd(true)} style={{padding:"8px 16px",borderRadius:10,background:"linear-gradient(135deg,#f5607c,#7c72f5)",border:"none",color:"#fff",fontWeight:700,fontSize:"0.85rem"}}>＋ 追加</Btn>
+          </div>
         </div>
       </div>
 
@@ -413,7 +514,10 @@ function App() {
         ))}
       </div>
 
-      {showAdd && <ListenerFormModal onSave={addListener} onClose={()=>setShowAdd(false)} />}
+      {showBackupMenu && (
+        <BackupMenuModal listeners={listeners} onRestore={restoreListeners} onClose={()=>setShowBackupMenu(false)} />
+      )}
+      {showAdd && <ListenerFormModal onSave={addListener} onClose={()=>setShowAdd(false)} />}}
       {addBadgeFor && (
         <AddBadgeModal listener={addBadgeFor}
           onSave={badge=>{ addBadge(addBadgeFor.id, badge); setAddBadgeFor(null); }}
