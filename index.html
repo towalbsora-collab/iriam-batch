@@ -517,7 +517,7 @@ function App() {
       {showBackupMenu && (
         <BackupMenuModal listeners={listeners} onRestore={restoreListeners} onClose={()=>setShowBackupMenu(false)} />
       )}
-      {showAdd && <ListenerFormModal onSave={addListener} onClose={()=>setShowAdd(false)} />}}
+      {showAdd && <ListenerFormModal onSave={addListener} onClose={()=>setShowAdd(false)} />}
       {addBadgeFor && (
         <AddBadgeModal listener={addBadgeFor}
           onSave={badge=>{ addBadge(addBadgeFor.id, badge); setAddBadgeFor(null); }}
